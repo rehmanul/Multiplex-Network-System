@@ -221,6 +221,188 @@ async def metrics():
     return Response(generate_latest(), media_type="text/plain")
 
 
+@app.get("/analytics/network")
+async def get_network_data():
+    """Get network nodes and edges for visualization."""
+    if not db_client:
+        raise HTTPException(status_code=503, detail="Database not connected")
+    
+    try:
+        with db_client.driver.session() as session:
+            # Get all nodes
+            nodes_result = session.run("""
+                MATCH (n)
+                RETURN n.id as id, n.name as name, n.type as type, 
+                       labels(n)[0] as label
+            """)
+            nodes = [{"id": r["id"] or r["name"], "name": r["name"], 
+                      "type": r["type"] or r["label"]} for r in nodes_result]
+            
+            # Get all edges
+            edges_result = session.run("""
+                MATCH (s)-[e]->(t)
+                RETURN s.id as source, t.id as target, 
+                       type(e) as type, e.layer as layer, e.sign as sign
+            """)
+            edges = [{"source": r["source"], "target": r["target"], 
+                      "type": r["type"], "layer": r["layer"], 
+                      "sign": r["sign"]} for r in edges_result]
+        
+        return {"nodes": nodes, "edges": edges}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/analytics/ingest-congress-data")
+async def ingest_congress_data(
+    congress: int = Query(119, description="Congress number"),
+    bill_type: str = Query("hr", description="Bill type: hr, s, hjres, sjres"),
+    limit: int = Query(50, description="Number of bills to ingest")
+):
+    """
+    Ingest real congressional data from Congress.gov API.
+    Creates network nodes for bills, sponsors, committees, and their relationships.
+    """
+    import httpx
+    
+    if not db_client:
+        raise HTTPException(status_code=503, detail="Database not connected")
+    
+    api_key = os.environ.get("CONGRESS_API_KEY", "quJAfK3p2m3Lc3fs77oQJA6RvW21RiQhzY6b310E")
+    base_url = f"https://api.congress.gov/v3/bill/{congress}/{bill_type}"
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            # Fetch bills list
+            response = await client.get(f"{base_url}?api_key={api_key}&limit={limit}")
+            response.raise_for_status()
+            bills_data = response.json()
+            
+            nodes_created = 0
+            edges_created = 0
+            
+            with db_client.driver.session() as session:
+                # Create Congress node
+                session.run("""
+                    MERGE (c:Institution {id: $id})
+                    SET c.name = $name, c.type = 'Congress', c.congress = $congress
+                """, id=f"congress-{congress}", name=f"{congress}th Congress", congress=congress)
+                nodes_created += 1
+                
+                for bill in bills_data.get("bills", []):
+                    bill_number = bill.get("number")
+                    bill_title = bill.get("title", "")[:500]
+                    bill_id = f"{bill_type}-{bill_number}"
+                    latest_action = bill.get("latestAction", {}).get("text", "")
+                    action_date = bill.get("latestAction", {}).get("actionDate", "")
+                    
+                    # Create Bill node
+                    session.run("""
+                        MERGE (b:Bill {id: $id})
+                        SET b.number = $number, b.title = $title, b.type = $bill_type,
+                            b.congress = $congress, b.latestAction = $action,
+                            b.actionDate = $actionDate
+                    """, id=bill_id, number=bill_number, title=bill_title,
+                         bill_type=bill_type.upper(), congress=congress,
+                         action=latest_action, actionDate=action_date)
+                    nodes_created += 1
+                    
+                    # Fetch detailed bill info for sponsors and committees
+                    detail_url = bill.get("url")
+                    if detail_url:
+                        detail_response = await client.get(f"{detail_url}?api_key={api_key}")
+                        if detail_response.status_code == 200:
+                            detail = detail_response.json().get("bill", {})
+                            
+                            # Process sponsors
+                            for sponsor in detail.get("sponsors", []):
+                                sponsor_id = sponsor.get("bioguideId", "")
+                                if sponsor_id:
+                                    sponsor_name = f"{sponsor.get('firstName', '')} {sponsor.get('lastName', '')}"
+                                    party = sponsor.get("party", "")
+                                    state = sponsor.get("state", "")
+                                    
+                                    session.run("""
+                                        MERGE (l:Legislator {id: $id})
+                                        SET l.name = $name, l.party = $party, l.state = $state,
+                                            l.type = 'Legislator'
+                                    """, id=sponsor_id, name=sponsor_name, party=party, state=state)
+                                    nodes_created += 1
+                                    
+                                    session.run("""
+                                        MATCH (l:Legislator {id: $sponsor_id}), (b:Bill {id: $bill_id})
+                                        MERGE (l)-[:SPONSORED {layer: 'Sponsorship', sign: 1}]->(b)
+                                    """, sponsor_id=sponsor_id, bill_id=bill_id)
+                                    edges_created += 1
+                            
+                            # Process cosponsors
+                            cosponsors_url = detail.get("cosponsors", {}).get("url")
+                            if cosponsors_url:
+                                cosponsor_resp = await client.get(f"{cosponsors_url}?api_key={api_key}&limit=20")
+                                if cosponsor_resp.status_code == 200:
+                                    for cosponsor in cosponsor_resp.json().get("cosponsors", [])[:10]:
+                                        cosponsor_id = cosponsor.get("bioguideId", "")
+                                        if cosponsor_id:
+                                            cosponsor_name = f"{cosponsor.get('firstName', '')} {cosponsor.get('lastName', '')}"
+                                            
+                                            session.run("""
+                                                MERGE (l:Legislator {id: $id})
+                                                SET l.name = $name, l.party = $party, l.state = $state,
+                                                    l.type = 'Legislator'
+                                            """, id=cosponsor_id, name=cosponsor_name,
+                                                 party=cosponsor.get("party", ""),
+                                                 state=cosponsor.get("state", ""))
+                                            nodes_created += 1
+                                            
+                                            session.run("""
+                                                MATCH (l:Legislator {id: $cosponsor_id}), (b:Bill {id: $bill_id})
+                                                MERGE (l)-[:COSPONSORED {layer: 'Sponsorship', sign: 1}]->(b)
+                                            """, cosponsor_id=cosponsor_id, bill_id=bill_id)
+                                            edges_created += 1
+                            
+                            # Process committees
+                            committees = detail.get("committees", {}).get("item", [])
+                            if isinstance(committees, dict):
+                                committees = [committees]
+                            for committee in committees[:5]:
+                                comm_name = committee.get("name", "")
+                                comm_id = comm_name.lower().replace(" ", "_")[:30]
+                                chamber = committee.get("chamber", "")
+                                
+                                if comm_name:
+                                    session.run("""
+                                        MERGE (c:Committee {id: $id})
+                                        SET c.name = $name, c.chamber = $chamber, c.type = 'Committee'
+                                    """, id=comm_id, name=comm_name, chamber=chamber)
+                                    nodes_created += 1
+                                    
+                                    session.run("""
+                                        MATCH (b:Bill {id: $bill_id}), (c:Committee {id: $comm_id})
+                                        MERGE (b)-[:REFERRED_TO {layer: 'Legislative', sign: 1}]->(c)
+                                    """, bill_id=bill_id, comm_id=comm_id)
+                                    edges_created += 1
+                                    
+                                    # Link committee to Congress
+                                    session.run("""
+                                        MATCH (c:Committee {id: $comm_id}), (cong:Institution {id: $cong_id})
+                                        MERGE (c)-[:PART_OF {layer: 'Legislative', sign: 1}]->(cong)
+                                    """, comm_id=comm_id, cong_id=f"congress-{congress}")
+                                    edges_created += 1
+        
+        return {
+            "success": True,
+            "nodes_created": nodes_created,
+            "edges_created": edges_created,
+            "congress": congress,
+            "bill_type": bill_type,
+            "message": f"Ingested {limit} real bills from Congress.gov API"
+        }
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Congress API error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/analytics/frustration/{layer}", response_model=FrustrationResponse)
 async def compute_frustration(layer: str):
     """
