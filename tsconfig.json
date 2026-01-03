@@ -6,8 +6,6 @@
         "lib": [
             "ES2022"
         ],
-        "outDir": "./dist",
-        "rootDir": "./src",
         "strict": true,
         "esModuleInterop": true,
         "skipLibCheck": true,
@@ -25,6 +23,7 @@
     "exclude": [
         "node_modules",
         "dist",
+        "packages",
         "**/*.test.ts"
     ]
 }

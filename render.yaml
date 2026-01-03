@@ -77,7 +77,6 @@ services:
   - type: web
     name: multiplex-webapp
     env: static
-    region: oregon
     branch: main
     buildCommand: npm ci && npm run build --workspace=@multiplex/webapp
     staticPublishPath: packages/webapp/dist
