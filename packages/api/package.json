@@ -12,8 +12,8 @@
         "test:unit": "vitest run"
     },
     "dependencies": {
-        "@multiplex/core": "workspace:*",
-        "@multiplex/database": "workspace:*",
+        "@multiplex/core": "file:../core",
+        "@multiplex/database": "file:../database",
         "fastify": "^4.25.0",
         "@fastify/cors": "^8.5.0",
         "@fastify/helmet": "^11.1.1",

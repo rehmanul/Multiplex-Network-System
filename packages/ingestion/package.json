@@ -15,8 +15,8 @@
         "ingest:agencies": "node dist/cli/ingest.js --source=agencies"
     },
     "dependencies": {
-        "@multiplex/core": "workspace:*",
-        "@multiplex/database": "workspace:*",
+        "@multiplex/core": "file:../core",
+        "@multiplex/database": "file:../database",
         "zod": "^3.22.4",
         "undici": "^6.2.1",
         "p-queue": "^8.0.1",

@@ -13,7 +13,7 @@
         "migrate": "node dist/migrations/run.js"
     },
     "dependencies": {
-        "@multiplex/core": "workspace:*",
+        "@multiplex/core": "file:../core",
         "neo4j-driver": "^5.15.0",
         "pg": "^8.11.3",
         "ioredis": "^5.3.2"
