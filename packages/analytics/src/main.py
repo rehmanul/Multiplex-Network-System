@@ -272,7 +272,7 @@ async def ingest_congress_data(
     base_url = f"https://api.congress.gov/v3/bill/{congress}/{bill_type}"
     
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             # Fetch bills list
             response = await client.get(f"{base_url}?api_key={api_key}&limit={limit}")
             response.raise_for_status()
@@ -280,6 +280,7 @@ async def ingest_congress_data(
             
             nodes_created = 0
             edges_created = 0
+            errors = []
             
             with db_client.driver.session() as session:
                 # Create Congress node
@@ -290,104 +291,134 @@ async def ingest_congress_data(
                 nodes_created += 1
                 
                 for bill in bills_data.get("bills", []):
-                    bill_number = bill.get("number")
-                    bill_title = bill.get("title", "")[:500]
-                    bill_id = f"{bill_type}-{bill_number}"
-                    latest_action = bill.get("latestAction", {}).get("text", "")
-                    action_date = bill.get("latestAction", {}).get("actionDate", "")
-                    
-                    # Create Bill node
-                    session.run("""
-                        MERGE (b:Bill {id: $id})
-                        SET b.number = $number, b.title = $title, b.type = $bill_type,
-                            b.congress = $congress, b.latestAction = $action,
-                            b.actionDate = $actionDate
-                    """, id=bill_id, number=bill_number, title=bill_title,
-                         bill_type=bill_type.upper(), congress=congress,
-                         action=latest_action, actionDate=action_date)
-                    nodes_created += 1
-                    
-                    # Fetch detailed bill info for sponsors and committees
-                    detail_url = bill.get("url")
-                    if detail_url:
-                        detail_response = await client.get(f"{detail_url}?api_key={api_key}")
-                        if detail_response.status_code == 200:
-                            detail = detail_response.json().get("bill", {})
-                            
-                            # Process sponsors
-                            for sponsor in detail.get("sponsors", []):
-                                sponsor_id = sponsor.get("bioguideId", "")
-                                if sponsor_id:
-                                    sponsor_name = f"{sponsor.get('firstName', '')} {sponsor.get('lastName', '')}"
-                                    party = sponsor.get("party", "")
-                                    state = sponsor.get("state", "")
+                    try:
+                        bill_number = bill.get("number", "")
+                        if not bill_number:
+                            continue
+                        bill_title = (bill.get("title") or "")[:500]
+                        bill_id = f"{bill_type}-{bill_number}"
+                        
+                        # Safe access to latestAction
+                        latest_action_obj = bill.get("latestAction") or {}
+                        latest_action = latest_action_obj.get("text", "") if isinstance(latest_action_obj, dict) else ""
+                        action_date = latest_action_obj.get("actionDate", "") if isinstance(latest_action_obj, dict) else ""
+                        
+                        # Create Bill node
+                        session.run("""
+                            MERGE (b:Bill {id: $id})
+                            SET b.number = $number, b.title = $title, b.type = $bill_type,
+                                b.congress = $congress, b.latestAction = $action,
+                                b.actionDate = $actionDate
+                        """, id=bill_id, number=str(bill_number), title=bill_title,
+                             bill_type=bill_type.upper(), congress=congress,
+                             action=latest_action, actionDate=action_date)
+                        nodes_created += 1
+                        
+                        # Fetch detailed bill info for sponsors and committees
+                        detail_url = bill.get("url")
+                        if detail_url:
+                            try:
+                                detail_response = await client.get(f"{detail_url}?api_key={api_key}")
+                                if detail_response.status_code == 200:
+                                    detail = detail_response.json().get("bill") or {}
                                     
-                                    session.run("""
-                                        MERGE (l:Legislator {id: $id})
-                                        SET l.name = $name, l.party = $party, l.state = $state,
-                                            l.type = 'Legislator'
-                                    """, id=sponsor_id, name=sponsor_name, party=party, state=state)
-                                    nodes_created += 1
-                                    
-                                    session.run("""
-                                        MATCH (l:Legislator {id: $sponsor_id}), (b:Bill {id: $bill_id})
-                                        MERGE (l)-[:SPONSORED {layer: 'Sponsorship', sign: 1}]->(b)
-                                    """, sponsor_id=sponsor_id, bill_id=bill_id)
-                                    edges_created += 1
-                            
-                            # Process cosponsors
-                            cosponsors_url = detail.get("cosponsors", {}).get("url")
-                            if cosponsors_url:
-                                cosponsor_resp = await client.get(f"{cosponsors_url}?api_key={api_key}&limit=20")
-                                if cosponsor_resp.status_code == 200:
-                                    for cosponsor in cosponsor_resp.json().get("cosponsors", [])[:10]:
-                                        cosponsor_id = cosponsor.get("bioguideId", "")
-                                        if cosponsor_id:
-                                            cosponsor_name = f"{cosponsor.get('firstName', '')} {cosponsor.get('lastName', '')}"
+                                    # Process sponsors
+                                    sponsors = detail.get("sponsors") or []
+                                    for sponsor in sponsors:
+                                        if not isinstance(sponsor, dict):
+                                            continue
+                                        sponsor_id = sponsor.get("bioguideId", "")
+                                        if sponsor_id:
+                                            sponsor_name = f"{sponsor.get('firstName', '')} {sponsor.get('lastName', '')}".strip()
+                                            party = sponsor.get("party", "")
+                                            state = sponsor.get("state", "")
                                             
                                             session.run("""
                                                 MERGE (l:Legislator {id: $id})
                                                 SET l.name = $name, l.party = $party, l.state = $state,
                                                     l.type = 'Legislator'
-                                            """, id=cosponsor_id, name=cosponsor_name,
-                                                 party=cosponsor.get("party", ""),
-                                                 state=cosponsor.get("state", ""))
+                                            """, id=sponsor_id, name=sponsor_name, party=party, state=state)
                                             nodes_created += 1
                                             
                                             session.run("""
-                                                MATCH (l:Legislator {id: $cosponsor_id}), (b:Bill {id: $bill_id})
-                                                MERGE (l)-[:COSPONSORED {layer: 'Sponsorship', sign: 1}]->(b)
-                                            """, cosponsor_id=cosponsor_id, bill_id=bill_id)
+                                                MATCH (l:Legislator {id: $sponsor_id}), (b:Bill {id: $bill_id})
+                                                MERGE (l)-[:SPONSORED {layer: 'Sponsorship', sign: 1}]->(b)
+                                            """, sponsor_id=sponsor_id, bill_id=bill_id)
                                             edges_created += 1
-                            
-                            # Process committees
-                            committees = detail.get("committees", {}).get("item", [])
-                            if isinstance(committees, dict):
-                                committees = [committees]
-                            for committee in committees[:5]:
-                                comm_name = committee.get("name", "")
-                                comm_id = comm_name.lower().replace(" ", "_")[:30]
-                                chamber = committee.get("chamber", "")
-                                
-                                if comm_name:
-                                    session.run("""
-                                        MERGE (c:Committee {id: $id})
-                                        SET c.name = $name, c.chamber = $chamber, c.type = 'Committee'
-                                    """, id=comm_id, name=comm_name, chamber=chamber)
-                                    nodes_created += 1
                                     
-                                    session.run("""
-                                        MATCH (b:Bill {id: $bill_id}), (c:Committee {id: $comm_id})
-                                        MERGE (b)-[:REFERRED_TO {layer: 'Legislative', sign: 1}]->(c)
-                                    """, bill_id=bill_id, comm_id=comm_id)
-                                    edges_created += 1
+                                    # Process cosponsors - safely access nested URL
+                                    cosponsors_obj = detail.get("cosponsors") or {}
+                                    cosponsors_url = cosponsors_obj.get("url") if isinstance(cosponsors_obj, dict) else None
+                                    if cosponsors_url:
+                                        try:
+                                            cosponsor_resp = await client.get(f"{cosponsors_url}?api_key={api_key}&limit=20")
+                                            if cosponsor_resp.status_code == 200:
+                                                cosponsor_data = cosponsor_resp.json().get("cosponsors") or []
+                                                for cosponsor in cosponsor_data[:10]:
+                                                    if not isinstance(cosponsor, dict):
+                                                        continue
+                                                    cosponsor_id = cosponsor.get("bioguideId", "")
+                                                    if cosponsor_id:
+                                                        cosponsor_name = f"{cosponsor.get('firstName', '')} {cosponsor.get('lastName', '')}".strip()
+                                                        
+                                                        session.run("""
+                                                            MERGE (l:Legislator {id: $id})
+                                                            SET l.name = $name, l.party = $party, l.state = $state,
+                                                                l.type = 'Legislator'
+                                                        """, id=cosponsor_id, name=cosponsor_name,
+                                                             party=cosponsor.get("party", ""),
+                                                             state=cosponsor.get("state", ""))
+                                                        nodes_created += 1
+                                                        
+                                                        session.run("""
+                                                            MATCH (l:Legislator {id: $cosponsor_id}), (b:Bill {id: $bill_id})
+                                                            MERGE (l)-[:COSPONSORED {layer: 'Sponsorship', sign: 1}]->(b)
+                                                        """, cosponsor_id=cosponsor_id, bill_id=bill_id)
+                                                        edges_created += 1
+                                        except Exception:
+                                            pass  # Skip cosponsors on error
                                     
-                                    # Link committee to Congress
-                                    session.run("""
-                                        MATCH (c:Committee {id: $comm_id}), (cong:Institution {id: $cong_id})
-                                        MERGE (c)-[:PART_OF {layer: 'Legislative', sign: 1}]->(cong)
-                                    """, comm_id=comm_id, cong_id=f"congress-{congress}")
-                                    edges_created += 1
+                                    # Process committees - safely access
+                                    committees_obj = detail.get("committees") or {}
+                                    committees = []
+                                    if isinstance(committees_obj, dict):
+                                        committees_item = committees_obj.get("item") or []
+                                        if isinstance(committees_item, dict):
+                                            committees = [committees_item]
+                                        elif isinstance(committees_item, list):
+                                            committees = committees_item
+                                    
+                                    for committee in committees[:5]:
+                                        if not isinstance(committee, dict):
+                                            continue
+                                        comm_name = committee.get("name", "")
+                                        if not comm_name:
+                                            continue
+                                        comm_id = comm_name.lower().replace(" ", "_")[:30]
+                                        chamber = committee.get("chamber", "")
+                                        
+                                        session.run("""
+                                            MERGE (c:Committee {id: $id})
+                                            SET c.name = $name, c.chamber = $chamber, c.type = 'Committee'
+                                        """, id=comm_id, name=comm_name, chamber=chamber)
+                                        nodes_created += 1
+                                        
+                                        session.run("""
+                                            MATCH (b:Bill {id: $bill_id}), (c:Committee {id: $comm_id})
+                                            MERGE (b)-[:REFERRED_TO {layer: 'Legislative', sign: 1}]->(c)
+                                        """, bill_id=bill_id, comm_id=comm_id)
+                                        edges_created += 1
+                                        
+                                        # Link committee to Congress
+                                        session.run("""
+                                            MATCH (c:Committee {id: $comm_id}), (cong:Institution {id: $cong_id})
+                                            MERGE (c)-[:PART_OF {layer: 'Legislative', sign: 1}]->(cong)
+                                        """, comm_id=comm_id, cong_id=f"congress-{congress}")
+                                        edges_created += 1
+                            except Exception as e:
+                                errors.append(f"Bill {bill_id}: {str(e)}")
+                    except Exception as e:
+                        errors.append(f"Bill processing error: {str(e)}")
         
         return {
             "success": True,
@@ -395,6 +426,7 @@ async def ingest_congress_data(
             "edges_created": edges_created,
             "congress": congress,
             "bill_type": bill_type,
+            "errors": errors[:10] if errors else [],
             "message": f"Ingested {limit} real bills from Congress.gov API"
         }
     except httpx.HTTPError as e:
