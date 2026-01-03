@@ -2,7 +2,23 @@
  * Multiplex Network - API Client
  */
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+// Primary API is the analytics service
+const API_BASE = import.meta.env.VITE_API_URL ?? 'https://multiplex-analytics.onrender.com';
+
+interface NetworkData {
+    nodes: Array<{
+        id: string;
+        name: string;
+        type: string;
+    }>;
+    edges: Array<{
+        source: string;
+        target: string;
+        type: string;
+        layer?: string;
+        sign?: number;
+    }>;
+}
 
 interface ApiResponse<T> {
     data: T;
@@ -132,4 +148,14 @@ export const api = {
 
     getLayerMetrics: (layer: NetworkLayer) =>
         fetchApi(`/layers/${layer}/metrics`),
+
+    // Network Graph Data
+    getNetworkData: (): Promise<NetworkData> =>
+        fetchApi<NetworkData>('/analytics/network'),
+
+    // Data Ingestion
+    ingestCongressData: (congress = 119, billType = 'hr', limit = 30) =>
+        fetchApi<{ success: boolean; nodes_created: number; edges_created: number }>(`/analytics/ingest-congress-data?congress=${congress}&bill_type=${billType}&limit=${limit}`, {
+            method: 'POST',
+        }),
 };

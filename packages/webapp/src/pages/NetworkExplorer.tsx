@@ -23,15 +23,31 @@ export function NetworkExplorer() {
     const [selectedNode, setSelectedNode] = useState<Node | null>(null);
     const [showLabels, setShowLabels] = useState(true);
 
-    const { data: nodesData, isLoading: nodesLoading } = useQuery({
-        queryKey: ['nodes', 'all'],
-        queryFn: () => api.getNodes('CONGRESS_MEMBER'),
+    // Fetch network data from analytics API
+    const { data: networkData, isLoading } = useQuery({
+        queryKey: ['networkData'],
+        queryFn: () => api.getNetworkData(),
+        staleTime: 60000, // Cache for 1 minute
     });
 
-    const { data: edgesData, isLoading: edgesLoading } = useQuery({
-        queryKey: ['edges', selectedLayer],
-        queryFn: () => api.getEdges(selectedLayer),
-    });
+    // Transform data for visualizer
+    const nodes = networkData?.nodes?.map(n => ({
+        id: n.id,
+        type: n.type || 'Unknown',
+        name: n.name || n.id,
+        layer: selectedLayer,
+    })) ?? [];
+
+    const edges = networkData?.edges?.filter(e =>
+        !selectedLayer || e.layer === selectedLayer
+    ).map(e => ({
+        id: `${e.source}-${e.target}`,
+        source: e.source,
+        target: e.target,
+        type: e.type || 'EDGE',
+        sign: e.sign === 1 ? 'POSITIVE' as const : e.sign === -1 ? 'NEGATIVE' as const : 'NEUTRAL' as const,
+        layer: e.layer || 'default',
+    })) ?? [];
 
     const handleNodeClick = (node: Node) => {
         setSelectedNode(node);
@@ -92,12 +108,17 @@ export function NetworkExplorer() {
             </div>
 
             <div className="explorer-main">
-                {(nodesLoading || edgesLoading) ? (
+                {isLoading ? (
                     <div className="loading">Loading network data...</div>
+                ) : nodes.length === 0 ? (
+                    <div className="empty-state">
+                        <p>No network data available.</p>
+                        <p>Use the API to ingest Congress data first.</p>
+                    </div>
                 ) : (
                     <NetworkVisualizer
-                        nodes={nodesData?.data ?? []}
-                        edges={edgesData?.data ?? []}
+                        nodes={nodes}
+                        edges={edges}
                         selectedLayer={selectedLayer}
                         onNodeClick={handleNodeClick}
                         showLabels={showLabels}
