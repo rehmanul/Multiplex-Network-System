@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Congress Bill Scraper</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --accent: #3b82f6;
+            --text: #f1f5f9;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+
+        .dropzone {
+            border: 2px dashed #475569;
+            border-radius: 12px;
+            padding: 48px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .dropzone:hover,
+        .dropzone.dragover {
+            border-color: var(--accent);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .dropzone h3 {
+            margin-bottom: 8px;
+        }
+
+        .dropzone p {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .api-key-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: var(--bg-primary);
+            border: 1px solid #475569;
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 14px;
+            margin-top: 12px;
+        }
+
+        .api-key-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        label {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 16px;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .results {
+            margin-top: 24px;
+        }
+
+        .bill-item {
+            background: var(--bg-primary);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .bill-number {
+            font-weight: 600;
+            color: var(--accent);
+            font-size: 16px;
+        }
+
+        .bill-title {
+            margin: 8px 0;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .link {
+            background: #334155;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .link:hover {
+            background: #475569;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat {
+            background: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .copy-all {
+            background: #22c55e;
+            margin-left: 8px;
+        }
+
+        #allLinks {
+            background: var(--bg-primary);
+            border: 1px solid #475569;
+            border-radius: 8px;
+            padding: 16px;
+            font-family: monospace;
+            font-size: 11px;
+            max-height: 300px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            margin-top: 16px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🏛️ Congress Bill Scraper</h1>
+    <p class="subtitle">Upload your Congress.gov CSV export to generate API links for data extraction</p>
+
+    <div class="card">
+        <label>Congress.gov API Key</label>
+        <input type="text" id="apiKey" class="api-key-input" placeholder="Enter your API key (e.g., quJAfK3p...)"
+            value="quJAfK3p2m3Lc3fs77oQJA6RvW21RiQhzY6b310E">
+    </div>
+
+    <div class="card dropzone" id="dropzone">
+        <h3>📁 Drop CSV File Here</h3>
+        <p>or click to select file</p>
+        <input type="file" id="fileInput" accept=".csv">
+    </div>
+
+    <div id="stats" class="stats" style="display:none;"></div>
+
+    <div id="output" style="display:none;">
+        <div class="card">
+            <h3>📋 All API Links</h3>
+            <button class="btn copy-all" onclick="copyAllLinks()">Copy All Links</button>
+            <div id="allLinks"></div>
+        </div>
+
+        <div class="card results" id="results"></div>
+    </div>
+
+    <script>
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const apiKeyInput = document.getElementById('apiKey');
+
+        dropzone.addEventListener('click', () => fileInput.click());
+        dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files[0]) processFile(fileInput.files[0]);
+        });
+
+        let allApiLinks = [];
+
+        function processFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => parseCSV(e.target.result);
+            reader.readAsText(file);
+        }
+
+        function parseCSV(text) {
+            const lines = text.split('\n').filter(l => l.trim());
+            const bills = [];
+
+            // Skip header lines (first 4 lines)
+            for (let i = 4; i < lines.length; i++) {
+                const line = lines[i];
+                if (!line.trim()) continue;
+
+                // Parse CSV with quotes
+                const matches = line.match(/("([^"]*)"|[^,]+)/g);
+                if (!matches || matches.length < 4) continue;
+
+                const clean = (s) => s ? s.replace(/^"|"$/g, '').trim() : '';
+                const billNumber = clean(matches[0]);
+                const url = clean(matches[1]);
+                const congress = clean(matches[2]);
+                const title = clean(matches[3]);
+                const sponsor = clean(matches[4] || '');
+                const latestAction = clean(matches[7] || '');
+                const publicLaw = latestAction.match(/Public Law No: (\d+-\d+)/)?.[1] || '';
+
+                if (billNumber && url) {
+                    bills.push({ billNumber, url, congress, title, sponsor, latestAction, publicLaw });
+                }
+            }
+
+            displayResults(bills);
+        }
+
+        function displayResults(bills) {
+            const apiKey = apiKeyInput.value;
+            const baseApi = 'https://api.congress.gov/v3';
+
+            document.getElementById('stats').style.display = 'grid';
+            document.getElementById('stats').innerHTML = `
+        <div class="stat"><div class="stat-value">${bills.length}</div><div class="stat-label">Bills Found</div></div>
+        <div class="stat"><div class="stat-value">${bills.filter(b => b.publicLaw).length}</div><div class="stat-label">Public Laws</div></div>
+        <div class="stat"><div class="stat-value">${bills.filter(b => b.billNumber.startsWith('H.')).length}</div><div class="stat-label">House Bills</div></div>
+        <div class="stat"><div class="stat-value">${bills.filter(b => b.billNumber.startsWith('S.')).length}</div><div class="stat-label">Senate Bills</div></div>
+      `;
+
+            document.getElementById('output').style.display = 'block';
+
+            allApiLinks = [];
+            let resultsHtml = '';
+
+            bills.forEach(bill => {
+                // Parse bill number for API
+                const match = bill.billNumber.match(/^([A-Z.]+)\s*(\d+)/i);
+                if (!match) return;
+
+                const typeMap = {
+                    'H.R.': 'hr', 'S.': 's', 'H.J.Res.': 'hjres', 'S.J.Res.': 'sjres',
+                    'H.Con.Res.': 'hconres', 'S.Con.Res.': 'sconres', 'H.Res.': 'hres', 'S.Res.': 'sres'
+                };
+
+                const billType = typeMap[match[1]] || match[1].toLowerCase().replace('.', '');
+                const billNum = match[2];
+                const congress = '119';
+
+                const links = {
+                    bill: `${baseApi}/bill/${congress}/${billType}/${billNum}?api_key=${apiKey}`,
+                    text: `${baseApi}/bill/${congress}/${billType}/${billNum}/text?api_key=${apiKey}`,
+                    actions: `${baseApi}/bill/${congress}/${billType}/${billNum}/actions?api_key=${apiKey}`,
+                    cosponsors: `${baseApi}/bill/${congress}/${billType}/${billNum}/cosponsors?api_key=${apiKey}`,
+                    subjects: `${baseApi}/bill/${congress}/${billType}/${billNum}/subjects?api_key=${apiKey}`,
+                    amendments: `${baseApi}/bill/${congress}/${billType}/${billNum}/amendments?api_key=${apiKey}`,
+                    relatedbills: `${baseApi}/bill/${congress}/${billType}/${billNum}/relatedbills?api_key=${apiKey}`,
+                    committees: `${baseApi}/bill/${congress}/${billType}/${billNum}/committees?api_key=${apiKey}`,
+                };
+
+                allApiLinks.push(`# ${bill.billNumber}`);
+                Object.entries(links).forEach(([k, v]) => allApiLinks.push(v));
+                allApiLinks.push('');
+
+                resultsHtml += `
+          <div class="bill-item">
+            <div class="bill-number">${bill.billNumber} ${bill.publicLaw ? '✓ Public Law ' + bill.publicLaw : ''}</div>
+            <div class="bill-title">${bill.title}</div>
+            <div class="links">
+              <a href="${links.bill}" target="_blank" class="link">📄 Bill Info</a>
+              <a href="${links.text}" target="_blank" class="link">📝 Full Text</a>
+              <a href="${links.actions}" target="_blank" class="link">📊 Actions</a>
+              <a href="${links.cosponsors}" target="_blank" class="link">👥 Cosponsors</a>
+              <a href="${links.subjects}" target="_blank" class="link">🏷️ Subjects</a>
+              <a href="${links.amendments}" target="_blank" class="link">✏️ Amendments</a>
+              <a href="${links.committees}" target="_blank" class="link">🏛️ Committees</a>
+              <a href="${bill.url}" target="_blank" class="link">🌐 Congress.gov</a>
+            </div>
+          </div>
+        `;
+            });
+
+            document.getElementById('allLinks').textContent = allApiLinks.join('\n');
+            document.getElementById('results').innerHTML = resultsHtml;
+        }
+
+        function copyAllLinks() {
+            navigator.clipboard.writeText(allApiLinks.join('\n'));
+            alert('All links copied to clipboard!');
+        }
+    </script>
+</body>
+
+</html>
