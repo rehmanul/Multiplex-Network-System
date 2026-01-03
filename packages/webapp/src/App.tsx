@@ -8,6 +8,7 @@ import { Dashboard } from './pages/Dashboard';
 import { NetworkExplorer } from './pages/NetworkExplorer';
 import { Analytics } from './pages/Analytics';
 import { PathFinder } from './pages/PathFinder';
+import { Scraper } from './pages/Scraper';
 
 export function App() {
     return (
@@ -17,6 +18,7 @@ export function App() {
                 <Route path="network" element={<NetworkExplorer />} />
                 <Route path="analytics" element={<Analytics />} />
                 <Route path="paths" element={<PathFinder />} />
+                <Route path="scraper" element={<Scraper />} />
             </Route>
         </Routes>
     );
