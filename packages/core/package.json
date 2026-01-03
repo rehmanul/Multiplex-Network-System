@@ -1,0 +1,41 @@
+{
+    "name": "@multiplex/core",
+    "version": "1.0.0",
+    "description": "Core data models, types, and network layer definitions",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./nodes": {
+            "types": "./dist/models/nodes/index.d.ts",
+            "import": "./dist/models/nodes/index.js"
+        },
+        "./edges": {
+            "types": "./dist/models/edges/index.d.ts",
+            "import": "./dist/models/edges/index.js"
+        },
+        "./layers": {
+            "types": "./dist/layers/index.d.ts",
+            "import": "./dist/layers/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "test": "vitest",
+        "test:unit": "vitest run",
+        "lint": "eslint src --ext .ts"
+    },
+    "dependencies": {
+        "zod": "^3.22.4",
+        "uuid": "^9.0.1"
+    },
+    "devDependencies": {
+        "@types/uuid": "^9.0.7",
+        "vitest": "^1.0.0"
+    }
+}

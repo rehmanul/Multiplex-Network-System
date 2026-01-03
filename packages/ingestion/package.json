@@ -1,0 +1,28 @@
+{
+    "name": "@multiplex/ingestion",
+    "version": "1.0.0",
+    "description": "Data ingestion connectors for authoritative sources",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "test": "vitest",
+        "test:unit": "vitest run",
+        "ingest": "node dist/cli/ingest.js",
+        "ingest:congress": "node dist/cli/ingest.js --source=congress",
+        "ingest:agencies": "node dist/cli/ingest.js --source=agencies"
+    },
+    "dependencies": {
+        "@multiplex/core": "workspace:*",
+        "@multiplex/database": "workspace:*",
+        "zod": "^3.22.4",
+        "undici": "^6.2.1",
+        "p-queue": "^8.0.1",
+        "p-retry": "^6.2.0"
+    },
+    "devDependencies": {
+        "vitest": "^1.0.0"
+    }
+}

@@ -1,0 +1,148 @@
+# Render.com Blueprint for Multiplex Network System
+# https://render.com/docs/blueprint-spec
+
+services:
+  # API Service
+  - type: web
+    name: multiplex-api
+    env: node
+    region: oregon
+    plan: standard
+    branch: main
+    buildCommand: npm ci && npm run build --workspace=@multiplex/api
+    startCommand: npm run start --workspace=@multiplex/api
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_PORT
+        value: 3001
+      - key: NEO4J_URI
+        fromDatabase:
+          name: multiplex-neo4j
+          property: connectionString
+      - key: NEO4J_USER
+        sync: false
+      - key: NEO4J_PASSWORD
+        sync: false
+      - key: POSTGRES_URL
+        fromDatabase:
+          name: multiplex-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: multiplex-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ANALYTICS_URL
+        fromService:
+          type: web
+          name: multiplex-analytics
+          property: hostport
+      - key: CONGRESS_API_KEY
+        sync: false
+
+  # Analytics Service (Python)
+  - type: web
+    name: multiplex-analytics
+    env: python
+    region: oregon
+    plan: standard
+    branch: main
+    buildCommand: cd packages/analytics && pip install -e .
+    startCommand: cd packages/analytics && python -m uvicorn src.main:app --host 0.0.0.0 --port 8001
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ANALYTICS_PORT
+        value: 8001
+      - key: NEO4J_URI
+        fromDatabase:
+          name: multiplex-neo4j
+          property: connectionString
+      - key: NEO4J_USER
+        sync: false
+      - key: NEO4J_PASSWORD
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: multiplex-redis
+          property: connectionString
+
+  # Web Application
+  - type: web
+    name: multiplex-webapp
+    env: static
+    region: oregon
+    branch: main
+    buildCommand: npm ci && npm run build --workspace=@multiplex/webapp
+    staticPublishPath: packages/webapp/dist
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://multiplex-api.onrender.com/*
+      - type: rewrite
+        source: /graphql
+        destination: https://multiplex-api.onrender.com/graphql
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: /api
+
+  # Background Worker for Data Ingestion
+  - type: worker
+    name: multiplex-ingestion
+    env: node
+    region: oregon
+    plan: standard
+    branch: main
+    buildCommand: npm ci && npm run build --workspace=@multiplex/ingestion
+    startCommand: npm run ingest --workspace=@multiplex/ingestion
+    autoDeploy: false  # Manual trigger for data ingestion
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEO4J_URI
+        fromDatabase:
+          name: multiplex-neo4j
+          property: connectionString
+      - key: NEO4J_USER
+        sync: false
+      - key: NEO4J_PASSWORD
+        sync: false
+      - key: CONGRESS_API_KEY
+        sync: false
+
+# Databases
+databases:
+  - name: multiplex-postgres
+    databaseName: multiplex
+    user: multiplex
+    plan: standard
+    region: oregon
+    postgresMajorVersion: 16
+    ipAllowList: []  # Only internal connections
+
+# Note: Neo4j is not natively supported on Render
+# Use Neo4j Aura (cloud) or deploy via Docker
+# Add NEO4J_URI manually from your Neo4j Aura instance
+
+# Redis
+# Note: Use Render's managed Redis service
+# Add REDIS_URL from the Redis service dashboard

@@ -1,0 +1,93 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: multiplex
+
+resources:
+  - ../base
+
+patches:
+  # Production-specific replica counts
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 5
+    target:
+      kind: Deployment
+      name: multiplex-api
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+    target:
+      kind: Deployment
+      name: multiplex-analytics
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+    target:
+      kind: Deployment
+      name: multiplex-webapp
+
+  # Production resource limits
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "512Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "2Gi"
+    target:
+      kind: Deployment
+      name: multiplex-api
+
+  # Neo4j production sizing
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "8Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "16Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "2000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "8000m"
+    target:
+      kind: StatefulSet
+      name: neo4j
+
+  # Production storage
+  - patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 500Gi
+    target:
+      kind: StatefulSet
+      name: neo4j
+
+images:
+  - name: ghcr.io/multiplex/api
+    newTag: v1.0.0
+  - name: ghcr.io/multiplex/analytics
+    newTag: v1.0.0
+  - name: ghcr.io/multiplex/webapp
+    newTag: v1.0.0
+
+configMapGenerator:
+  - name: multiplex-config
+    behavior: merge
+    literals:
+      - LOG_LEVEL=warn
+      - LOG_FORMAT=json
+
+# Production secrets should be managed via external secrets operator or sealed secrets
+# This is a placeholder - DO NOT commit real secrets
+secretGenerator:
+  - name: multiplex-secrets
+    behavior: merge
+    literals:
+      - placeholder=true

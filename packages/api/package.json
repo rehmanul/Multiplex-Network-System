@@ -1,0 +1,35 @@
+{
+    "name": "@multiplex/api",
+    "version": "1.0.0",
+    "description": "REST and GraphQL API for multiplex network system",
+    "type": "module",
+    "main": "./dist/index.js",
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsx watch src/index.ts",
+        "start": "node dist/index.js",
+        "test": "vitest",
+        "test:unit": "vitest run"
+    },
+    "dependencies": {
+        "@multiplex/core": "workspace:*",
+        "@multiplex/database": "workspace:*",
+        "fastify": "^4.25.0",
+        "@fastify/cors": "^8.5.0",
+        "@fastify/helmet": "^11.1.1",
+        "@fastify/rate-limit": "^9.1.0",
+        "@fastify/jwt": "^7.2.4",
+        "@fastify/swagger": "^8.12.0",
+        "@fastify/swagger-ui": "^2.0.0",
+        "mercurius": "^13.3.0",
+        "graphql": "^16.8.1",
+        "pino": "^8.17.2",
+        "pino-pretty": "^10.3.0",
+        "ioredis": "^5.3.2",
+        "undici": "^6.2.1"
+    },
+    "devDependencies": {
+        "tsx": "^4.7.0",
+        "vitest": "^1.0.0"
+    }
+}

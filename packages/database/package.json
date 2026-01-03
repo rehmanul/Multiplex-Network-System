@@ -1,0 +1,25 @@
+{
+    "name": "@multiplex/database",
+    "version": "1.0.0",
+    "description": "Neo4j and PostgreSQL database integrations",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "test": "vitest",
+        "test:unit": "vitest run",
+        "migrate": "node dist/migrations/run.js"
+    },
+    "dependencies": {
+        "@multiplex/core": "workspace:*",
+        "neo4j-driver": "^5.15.0",
+        "pg": "^8.11.3",
+        "ioredis": "^5.3.2"
+    },
+    "devDependencies": {
+        "@types/pg": "^8.10.9",
+        "vitest": "^1.0.0"
+    }
+}

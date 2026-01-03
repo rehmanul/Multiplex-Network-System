@@ -1,0 +1,166 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multiplex-analytics
+  namespace: multiplex
+  labels:
+    app.kubernetes.io/name: multiplex-analytics
+    app.kubernetes.io/component: analytics
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: multiplex-analytics
+  template:
+    metadata:
+      labels:
+        app: multiplex-analytics
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+    spec:
+      containers:
+        - name: analytics
+          image: ghcr.io/multiplex/analytics:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+              name: http
+          env:
+            - name: ANALYTICS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: multiplex-config
+                  key: ANALYTICS_PORT
+            - name: NEO4J_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: multiplex-config
+                  key: NEO4J_URI
+            - name: NEO4J_USER
+              valueFrom:
+                secretKeyRef:
+                  name: multiplex-secrets
+                  key: NEO4J_USER
+            - name: NEO4J_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: multiplex-secrets
+                  key: NEO4J_PASSWORD
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)"
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: multiplex-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: multiplex-config
+                  key: REDIS_PORT
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: multiplex-secrets
+                  key: REDIS_PASSWORD
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: multiplex-analytics-service
+  namespace: multiplex
+spec:
+  selector:
+    app: multiplex-analytics
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multiplex-webapp
+  namespace: multiplex
+  labels:
+    app.kubernetes.io/name: multiplex-webapp
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: multiplex-webapp
+  template:
+    metadata:
+      labels:
+        app: multiplex-webapp
+    spec:
+      containers:
+        - name: webapp
+          image: ghcr.io/multiplex/webapp:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: VITE_API_URL
+              value: "/api"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: multiplex-webapp-service
+  namespace: multiplex
+spec:
+  selector:
+    app: multiplex-webapp
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+  type: ClusterIP

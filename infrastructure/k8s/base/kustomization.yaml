@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: multiplex
+
+resources:
+  - namespace.yaml
+  - databases.yaml
+  - api.yaml
+  - apps.yaml
+  - ingress.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: multiplex-system
+  app.kubernetes.io/managed-by: kustomize
+
+configMapGenerator:
+  - name: multiplex-config
+    behavior: merge
+    literals:
+      - LOG_LEVEL=info
+
+secretGenerator:
+  - name: multiplex-secrets
+    behavior: merge
+    literals:
+      - NEO4J_PASSWORD=changeme
+      - POSTGRES_PASSWORD=changeme
+      - REDIS_PASSWORD=changeme
+      - JWT_SECRET=changeme-to-secure-random-string
